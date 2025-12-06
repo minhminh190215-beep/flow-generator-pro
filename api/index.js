@@ -234,6 +234,8 @@ async function handleBatchGenerate(req, res) {
     }
 
     try {
+        console.log('Generate request for project:', projectId);
+        
         const response = await fetch(`${SANDBOX_URL}/projects/${projectId}/flowMedia:batchGenerateImages`, {
             method: 'POST',
             headers: {
@@ -249,13 +251,16 @@ async function handleBatchGenerate(req, res) {
             body: JSON.stringify(payload)
         });
 
+        const text = await response.text();
+        console.log('Generate response status:', response.status);
+        console.log('Generate response (first 1000 chars):', text.substring(0, 1000));
+
         if (!response.ok) {
-            const errText = await response.text();
-            console.error('Generate failed:', errText.substring(0, 200));
-            return jsonResponse(res, { error: errText.substring(0, 200) }, response.status);
+            console.error('Generate failed:', text.substring(0, 500));
+            return jsonResponse(res, { error: text.substring(0, 200) }, response.status);
         }
 
-        const data = await response.json();
+        const data = JSON.parse(text);
         return jsonResponse(res, data);
 
     } catch (e) {
