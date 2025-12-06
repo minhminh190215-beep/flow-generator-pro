@@ -137,30 +137,44 @@ app.post('/api/proxy/check-credits', async (req, res) => {
     }
 
     try {
-        const response = await fetch(`${SANDBOX_URL}:getFlowUserInfo?key=${API_KEY}`, {
+        const url = `${SANDBOX_URL}:getFlowUserInfo?key=${API_KEY}`;
+        console.log('Checking credits at:', url);
+        
+        const response = await fetch(url, {
             method: 'GET',
             headers: {
                 'Authorization': `Bearer ${bearerToken}`,
                 'User-Agent': USER_AGENT,
                 'Referer': 'https://labs.google/',
+                'Origin': 'https://labs.google',
+                'Accept': 'application/json',
             }
         });
 
+        const text = await response.text();
+        console.log('Credits response status:', response.status);
+        console.log('Credits response:', text.substring(0, 300));
+
         if (!response.ok) {
-            const errText = await response.text();
-            return res.status(response.status).json({ error: errText.substring(0, 200) });
+            // Return partial success - credits unknown but can continue
+            return res.json({ 
+                credits: '?', 
+                userPaygateTier: 'UNKNOWN',
+                error: 'Could not fetch credits'
+            });
         }
 
-        const data = await response.json();
+        const data = JSON.parse(text);
         res.json({
-            credits: data.credits || data.remainingCredits || 0,
-            userPaygateTier: data.userPaygateTier || 'PAYGATE_TIER_ONE',
+            credits: data.credits || data.remainingCredits || data.userCredits || 0,
+            userPaygateTier: data.userPaygateTier || data.tier || 'PAYGATE_TIER_ONE',
             ...data
         });
 
     } catch (e) {
         console.error('Check credits error:', e.message);
-        res.status(500).json({ error: e.message });
+        // Return partial success
+        res.json({ credits: '?', userPaygateTier: 'UNKNOWN', error: e.message });
     }
 });
 
@@ -175,17 +189,15 @@ app.post('/api/proxy/create-project', async (req, res) => {
     const name = projectName || `Flow Project ${Date.now()}`;
 
     try {
-        // Method 1: tRPC endpoint
+        // Method: tRPC endpoint WITHOUT batch
         const payload = {
-            "0": {
-                "json": {
-                    "projectName": name,
-                    "tool": "FLOW"
-                }
+            "json": {
+                "projectName": name,
+                "tool": "FLOW"
             }
         };
 
-        const response = await fetch('https://labs.google/fx/api/trpc/projects.create?batch=1', {
+        const response = await fetch('https://labs.google/fx/api/trpc/projects.create', {
             method: 'POST',
             headers: {
                 ...getGoogleHeaders(cookie),
@@ -195,9 +207,10 @@ app.post('/api/proxy/create-project', async (req, res) => {
         });
 
         const text = await response.text();
+        console.log('Create project response:', text.substring(0, 500));
 
         if (!response.ok) {
-            console.error('Create project failed:', text.substring(0, 200));
+            console.error('Create project failed:', text.substring(0, 300));
             return res.status(response.status).json({ 
                 error: 'Create project failed: ' + text.substring(0, 200), 
                 success: false 
@@ -211,13 +224,16 @@ app.post('/api/proxy/create-project', async (req, res) => {
             return res.status(400).json({ error: 'Invalid response', success: false });
         }
 
-        // Extract project ID
-        const projectId = data[0]?.result?.data?.json?.id ||
-                          data[0]?.result?.data?.id ||
-                          data.id ||
-                          data.projectId;
+        // Extract project ID - try multiple paths
+        const projectId = data?.result?.data?.json?.id ||
+                          data?.result?.data?.id ||
+                          data?.data?.json?.id ||
+                          data?.json?.id ||
+                          data?.id ||
+                          data?.projectId;
 
         if (!projectId) {
+            console.error('No project ID found in:', JSON.stringify(data).substring(0, 300));
             return res.status(400).json({ error: 'Could not extract project ID', success: false });
         }
 
