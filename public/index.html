@@ -779,16 +779,64 @@
                     }
                     
                     const data = await res.json();
-                    const imgs = (data.media || []).map(m => 
-                        m?.image?.encodedImage ? `data:image/png;base64,${m.image.encodedImage}` : 
-                        m?.image?.generatedImage?.fileUrl
-                    ).filter(Boolean);
+                    console.log('Generate response:', JSON.stringify(data).substring(0, 500));
+                    
+                    // Try multiple paths to extract images
+                    let imgs = [];
+                    
+                    // Path 1: data.media[].image.encodedImage
+                    if (data.media && Array.isArray(data.media)) {
+                        imgs = data.media.map(m => {
+                            if (m?.image?.encodedImage) {
+                                return `data:image/png;base64,${m.image.encodedImage}`;
+                            }
+                            if (m?.image?.generatedImage?.fileUrl) {
+                                return m.image.generatedImage.fileUrl;
+                            }
+                            if (m?.generatedImage?.encodedImage) {
+                                return `data:image/png;base64,${m.generatedImage.encodedImage}`;
+                            }
+                            return null;
+                        }).filter(Boolean);
+                    }
+                    
+                    // Path 2: data.images[]
+                    if (!imgs.length && data.images && Array.isArray(data.images)) {
+                        imgs = data.images.map(img => {
+                            if (typeof img === 'string') return img;
+                            if (img?.encodedImage) return `data:image/png;base64,${img.encodedImage}`;
+                            if (img?.url) return img.url;
+                            if (img?.fileUrl) return img.fileUrl;
+                            return null;
+                        }).filter(Boolean);
+                    }
+                    
+                    // Path 3: data.generatedImages[]
+                    if (!imgs.length && data.generatedImages && Array.isArray(data.generatedImages)) {
+                        imgs = data.generatedImages.map(img => {
+                            if (img?.encodedImage) return `data:image/png;base64,${img.encodedImage}`;
+                            if (img?.image?.encodedImage) return `data:image/png;base64,${img.image.encodedImage}`;
+                            return null;
+                        }).filter(Boolean);
+                    }
+                    
+                    // Path 4: data.results[]
+                    if (!imgs.length && data.results && Array.isArray(data.results)) {
+                        imgs = data.results.map(r => {
+                            if (r?.image?.encodedImage) return `data:image/png;base64,${r.image.encodedImage}`;
+                            if (r?.encodedImage) return `data:image/png;base64,${r.encodedImage}`;
+                            return null;
+                        }).filter(Boolean);
+                    }
+                    
+                    console.log('Extracted images:', imgs.length);
                     
                     if (imgs.length) {
                         task.images = imgs;
                         task.status = 'done';
                     } else {
-                        throw new Error('No images returned');
+                        console.error('Full response:', JSON.stringify(data));
+                        throw new Error('No images returned - check console for response');
                     }
                     
                 } catch (e) {
